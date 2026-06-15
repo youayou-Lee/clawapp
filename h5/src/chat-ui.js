@@ -30,6 +30,7 @@ let _currentAiFiles = []
 let _currentRunId = null
 let _lastHistoryHash = ''  // 防止重连时重复渲染
 let _toolCards = new Map()
+let _toolOutputs = new Map() // 累积 command_output / tool 输出，按 toolCallId
 let _onSettingsCallback = null
 let _streamSafetyTimer = null // 流式安全超时
 let _renderTimer = null    // 节流渲染定时器
@@ -734,7 +735,7 @@ function handleAgentEvent(payload) {
 
   // tool 事件用 toolCallId + phase 跟踪
   // OpenClaw 2026.5.x+ 把工具调用放在 agent.stream='item' / data.kind='tool' 里
-  const isToolEvent = stream === 'tool' || (stream === 'item' && data?.kind === 'tool')
+  const isToolEvent = stream === 'tool' || (stream === 'item' && (data?.kind === 'tool' || data?.kind === 'command'))
   if (isToolEvent) {
     const toolCallId = data?.toolCallId
     if (!toolCallId) return
@@ -753,6 +754,20 @@ function handleAgentEvent(payload) {
     } else if (phase === 'start' || phase === 'update') {
       updateToolCard(card, 'running', data)
     }
+    scrollToBottom()
+    return
+  }
+
+  // command_output 流：携带 tool 实时输出（stdout/stderr），按 toolCallId 累积
+  if (stream === 'command_output') {
+    const toolCallId = data?.toolCallId
+    const output = data?.output
+    if (!toolCallId || output == null) return
+    let acc = _toolOutputs.get(toolCallId)
+    if (!acc) { acc = { chunks: [], done: false, exitCode: null, cwd: null }; _toolOutputs.set(toolCallId, acc) }
+    acc.chunks.push(output)
+    const card = _toolCards.get(toolCallId)
+    if (card) updateToolCardOutput(card, null, acc)
     scrollToBottom()
     return
   }
@@ -783,6 +798,7 @@ function resetStreamState() {
   _currentRunId = null
   _isStreaming = false
   _toolCards.clear()
+  _toolOutputs.clear()
   finalizeActivityGroup()
   markSessionPending(false)
   updateSendState()
@@ -908,6 +924,14 @@ function formatJson(value) {
 }
 
 function extractToolInput(data) {
+  if (!data) return ''
+  // command 类工具通常把可读的命令行描述放在 title/meta 里
+  if (data.kind === 'command') {
+    const parts = []
+    if (data.title) parts.push(String(data.title))
+    if (data.meta != null) parts.push(formatJson(data.meta))
+    if (parts.length) return parts.join('\n')
+  }
   if (data?.input != null) return formatJson(data.input)
   if (data?.arguments != null) return formatJson(data.arguments)
   if (data?.args != null) return formatJson(data.args)
@@ -917,11 +941,52 @@ function extractToolInput(data) {
 function extractToolOutput(status, data) {
   if (!data) return ''
   if (status === 'error' && data.error != null) return formatJson(data.error)
+  if (data.summary != null) return formatJson(data.summary)
+  if (data.progressText != null) return String(data.progressText)
   if (data.output != null) return formatJson(data.output)
   if (data.result != null) return formatJson(data.result)
   if (data.response != null) return formatJson(data.response)
   if (data.partialResult != null) return formatJson(data.partialResult)
   return ''
+}
+
+/** 把 command_output 累积块格式化为可读的 stdout/stderr */
+function formatCommandOutput(acc) {
+  if (!acc || !acc.chunks.length) return ''
+  const lines = []
+  for (const chunk of acc.chunks) {
+    if (typeof chunk === 'string') {
+      lines.push(chunk)
+    } else if (chunk && typeof chunk === 'object') {
+      if (chunk.stdout != null) lines.push(String(chunk.stdout))
+      if (chunk.stderr != null) lines.push(String(chunk.stderr))
+      if (chunk.output != null && chunk.stdout == null && chunk.stderr == null) {
+        lines.push(String(chunk.output))
+      }
+    }
+  }
+  return lines.join('')
+}
+
+/** 实时更新工具卡片输出区（用于 command_output 流） */
+function updateToolCardOutput(card, status, acc) {
+  const outputText = formatCommandOutput(acc)
+  if (!outputText) return
+  const outputBlock = card.querySelector('.tool-output-block')
+  const outputCode = outputBlock?.querySelector('code')
+  const outputLabel = card.querySelector('.tool-output-label')
+  if (outputBlock && outputCode) {
+    outputCode.textContent = outputText
+    if (outputLabel) outputLabel.textContent = status === 'error' ? t('tool.error') : t('tool.output')
+    outputBlock.classList.remove('hidden')
+  }
+  const rawBody = card.querySelector('.tool-raw-body')
+  const rawCode = rawBody?.querySelector('code')
+  const rawToggle = card.querySelector('.tool-raw-toggle')
+  if (rawBody && rawCode && rawToggle) {
+    rawCode.textContent = outputText
+    rawToggle.classList.remove('hidden')
+  }
 }
 
 /** 创建 Activity 分组容器 */
@@ -1056,6 +1121,7 @@ function createToolCard(name, status, data) {
         <div class="tool-block-header"><span class="tool-block-icon">${SVG_TOOL_ZAP}</span><span class="tool-block-label tool-output-label">${t('tool.output')}</span></div>
         <pre class="tool-block-content"><code></code></pre>
       </div>
+      <div class="tool-meta hidden"></div>
       <div class="tool-raw hidden">
         <button class="tool-raw-toggle" type="button" aria-expanded="false">
           <span>${t('tool.rawDetails')}</span>
@@ -1092,6 +1158,9 @@ function createToolCard(name, status, data) {
 
 function updateToolCard(card, status, data) {
   const isError = status === 'error'
+  const toolCallId = card.dataset.toolCallId || data?.toolCallId
+
+  // 状态图标
   const statusIcon = card.querySelector('.tool-status-icon')
   if (statusIcon) {
     statusIcon.className = `tool-status-icon ${isError ? 'error' : status === 'running' ? 'running' : 'done'}`
@@ -1111,8 +1180,31 @@ function updateToolCard(card, status, data) {
     summary.insertBefore(badge, statusIcon)
   }
 
-  // 输出
-  const outputText = extractToolOutput(status, data)
+  // Input：后续事件可能补充 title/meta，尝试刷新
+  const inputText = extractToolInput(data)
+  if (inputText) {
+    let inputBlock = card.querySelector('.tool-body > .tool-block:not(.tool-output-block)')
+    if (!inputBlock) {
+      inputBlock = document.createElement('div')
+      inputBlock.className = 'tool-block'
+      const body = card.querySelector('.tool-body')
+      const outputBlock = card.querySelector('.tool-output-block')
+      body?.insertBefore(inputBlock, outputBlock || body.firstChild)
+    }
+    if (inputBlock) {
+      inputBlock.innerHTML = `<div class="tool-block-header"><span class="tool-block-icon">${SVG_TOOL_ZAP}</span><span class="tool-block-label">${t('tool.input')}</span></div><pre class="tool-block-content"><code>${escapeText(inputText)}</code></pre>`
+    }
+  }
+
+  // Output：优先用 command_output 累积，再取 item 事件里的 summary/output/result
+  let outputText = ''
+  const acc = toolCallId ? _toolOutputs.get(toolCallId) : null
+  if (acc && acc.chunks.length) {
+    outputText = formatCommandOutput(acc)
+  }
+  if (!outputText) {
+    outputText = extractToolOutput(status, data)
+  }
   if (outputText) {
     const outputBlock = card.querySelector('.tool-output-block')
     const outputCode = outputBlock?.querySelector('code')
@@ -1123,7 +1215,6 @@ function updateToolCard(card, status, data) {
       outputBlock.classList.remove('hidden')
     }
 
-    // 原始详情（用于 canvas 等场景，当前复用 output）
     const rawBody = card.querySelector('.tool-raw-body')
     const rawCode = rawBody?.querySelector('code')
     const rawToggle = card.querySelector('.tool-raw-toggle')
@@ -1131,15 +1222,28 @@ function updateToolCard(card, status, data) {
       rawCode.textContent = outputText
       rawToggle.classList.remove('hidden')
     }
+  }
 
-    // 出错时自动展开
-    if (isError) {
-      const body = card.querySelector('.tool-body')
-      const chevron = card.querySelector('.tool-summary .tool-chevron')
-      if (body) body.classList.remove('hidden')
-      summary?.setAttribute('aria-expanded', 'true')
-      if (chevron) chevron.style.transform = 'rotate(180deg)'
+  // 元数据：cwd / exitCode / durationMs
+  const metaParts = []
+  if (data?.cwd != null) metaParts.push(`${t('tool.cwd')}: ${escapeText(String(data.cwd))}`)
+  if (data?.exitCode != null) metaParts.push(`${t('tool.exitCode')}: ${escapeText(String(data.exitCode))}`)
+  if (data?.durationMs != null) metaParts.push(`${t('tool.duration')}: ${escapeText(String(data.durationMs))}ms`)
+  if (metaParts.length) {
+    const metaEl = card.querySelector('.tool-meta')
+    if (metaEl) {
+      metaEl.innerHTML = metaParts.map(s => `<span class="tool-meta-item">${s}</span>`).join('')
+      metaEl.classList.remove('hidden')
     }
+  }
+
+  // 出错时自动展开
+  if (isError) {
+    const body = card.querySelector('.tool-body')
+    const chevron = card.querySelector('.tool-summary .tool-chevron')
+    if (body) body.classList.remove('hidden')
+    summary?.setAttribute('aria-expanded', 'true')
+    if (chevron) chevron.style.transform = 'rotate(180deg)'
   }
 
   // 更新 Activity 错误状态
@@ -1148,7 +1252,6 @@ function updateToolCard(card, status, data) {
     _currentActivityGroup.classList.add('has-error')
     const summaryEl = _currentActivityGroup.querySelector('.activity-summary')
     if (summaryEl) summaryEl.classList.add('activity-summary--error')
-    // 出错时自动展开 Activity
     if (!_currentActivityExpanded) {
       _currentActivityExpanded = true
       _currentActivityGroup.classList.add('expanded')

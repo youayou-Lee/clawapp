@@ -717,8 +717,26 @@ html, body {
 }
 
 .tool-output-block.hidden,
-.tool-raw.hidden {
+.tool-raw.hidden,
+.tool-meta.hidden {
   display: none;
+}
+
+.tool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.tool-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .tool-raw {
