@@ -54,11 +54,34 @@ export function renderMarkdown(text) {
   const result = []
   let inList = false
   let listType = ''
+  let inTable = false
+
+  function closeList() {
+    if (inList) {
+      result.push(`</${listType}>`)
+      inList = false
+      listType = ''
+    }
+  }
+
+  function isTableDelimiter(line) {
+    return /^\|?\s*:?-+:?(?:\s*\|\s*:?-+:?)\s*\|?\s*$/.test(line)
+  }
+
+  function parseTableRow(line) {
+    const parts = line.split('|')
+    return parts.map(s => s.trim()).filter((s, idx, arr) => {
+      // 忽略首尾的空白单元格（由行首/行尾的 | 产生）
+      if ((idx === 0 || idx === arr.length - 1) && s === '') return false
+      return true
+    })
+  }
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i]
 
     if (line.startsWith('<pre')) {
+      closeList()
       result.push(line)
       while (i < lines.length - 1 && !lines[i].includes('</pre>')) {
         i++
@@ -67,9 +90,16 @@ export function renderMarkdown(text) {
       continue
     }
 
+    // Horizontal rule
+    if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) {
+      closeList()
+      result.push('<hr>')
+      continue
+    }
+
     const headingMatch = line.match(/^(#{1,3})\s+(.+)$/)
     if (headingMatch) {
-      if (inList) { result.push(`</${listType}>`); inList = false }
+      closeList()
       const level = headingMatch[1].length
       result.push(`<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`)
       continue
@@ -77,8 +107,8 @@ export function renderMarkdown(text) {
 
     const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/)
     if (ulMatch) {
+      closeList()
       if (!inList || listType !== 'ul') {
-        if (inList) result.push(`</${listType}>`)
         result.push('<ul>')
         inList = true
         listType = 'ul'
@@ -89,8 +119,8 @@ export function renderMarkdown(text) {
 
     const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/)
     if (olMatch) {
+      closeList()
       if (!inList || listType !== 'ol') {
-        if (inList) result.push(`</${listType}>`)
         result.push('<ol>')
         inList = true
         listType = 'ol'
@@ -102,6 +132,30 @@ export function renderMarkdown(text) {
     if (inList) {
       result.push(`</${listType}>`)
       inList = false
+      listType = ''
+    }
+
+    // Tables: | col1 | col2 |
+    if (line.includes('|')) {
+      const nextLine = lines[i + 1] || ''
+      if (isTableDelimiter(nextLine)) {
+        closeList()
+        inTable = true
+        const headerCells = parseTableRow(line)
+        result.push('<table class="md-table"><thead><tr>' + headerCells.map(c => `<th>${inlineFormat(c)}</th>`).join('') + '</tr></thead><tbody>')
+        i++ // skip delimiter
+        continue
+      }
+      if (inTable) {
+        const cells = parseTableRow(line)
+        result.push('<tr>' + cells.map(c => `<td>${inlineFormat(c)}</td>`).join('') + '</tr>')
+        continue
+      }
+    }
+
+    if (inTable) {
+      result.push('</tbody></table>')
+      inTable = false
     }
 
     if (line.trim() === '') {
@@ -117,6 +171,7 @@ export function renderMarkdown(text) {
   }
 
   if (inList) result.push(`</${listType}>`)
+  if (inTable) result.push('</tbody></table>')
 
   let output = result.join('\n')
   // MEDIA: 路径替换为音频/视频/文件播放器

@@ -91,6 +91,48 @@
 .hl-func { color: #d2a8ff; }
 .hl-type { color: #ffa657; }
 
+.msg-bubble hr {
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  margin: 12px 0;
+}
+
+[data-theme="light"] .msg-bubble hr {
+  border-top: 1px solid rgba(0,0,0,0.12);
+}
+
+.msg-bubble .md-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.msg-bubble .md-table th,
+.msg-bubble .md-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.msg-bubble .md-table th {
+  background: rgba(255,255,255,0.05);
+  font-weight: 600;
+}
+
+[data-theme="light"] .msg-bubble .md-table th {
+  background: rgba(0,0,0,0.04);
+}
+
+.msg-bubble .md-table tr:nth-child(even) {
+  background: rgba(255,255,255,0.02);
+}
+
+[data-theme="light"] .msg-bubble .md-table tr:nth-child(even) {
+  background: rgba(0,0,0,0.02);
+}
+
 .cmd-overlay {
   position: fixed;
   inset: 0;
