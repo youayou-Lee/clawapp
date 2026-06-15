@@ -54,6 +54,31 @@ const SVG_RELOAD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
 let _recognition = null
 let _isRecording = false
 
+// Activity group state (consecutive tool calls during one assistant turn)
+let _currentActivityGroup = null
+let _currentActivityBody = null
+let _currentActivitySummaryLabel = null
+let _currentActivityPreview = null
+let _currentActivityBadge = null
+let _currentActivityChevron = null
+let _currentActivityCount = 0
+let _currentActivityToolNames = []
+let _currentActivityHasError = false
+let _currentActivityExpanded = true
+
+// Tool display: simple inline SVG icons
+const SVG_TOOL_ZAP = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+const SVG_TOOL_WRENCH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`
+const SVG_TOOL_SEARCH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`
+const SVG_TOOL_FILE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`
+const SVG_TOOL_GLOBE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`
+const SVG_TOOL_SETTINGS = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
+const SVG_TOOL_CODE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`
+const SVG_TOOL_ACTIVITY = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`
+const SVG_TOOL_CHECK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+const SVG_TOOL_X = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+const SVG_TOOL_CHEVRON_DOWN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`
+
 function shouldAutoFocusInput() {
   const ua = navigator.userAgent || ''
   const isMobileUA = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua)
@@ -416,6 +441,7 @@ async function sendMessage() {
 
 /** 实际发送消息 */
 async function doSend(text, attachments) {
+  finalizeActivityGroup()
   if (text) {
     console.log('[chat] appendUserMessage:', text.substring(0, 50))
     appendUserMessage(text, attachments)
@@ -525,6 +551,7 @@ function handleChatEvent(payload) {
     const c = extractContent(payload.message)
     if (c?.text && c.text.length > _currentAiText.length) {
       showTyping(false)
+      finalizeActivityGroup()
       if (!_currentAiBubble) { _currentAiBubble = createAiBubble(); _currentRunId = payload.runId }
       _currentAiText = c.text
       if (c.images.length) _currentAiImages = c.images
@@ -537,6 +564,7 @@ function handleChatEvent(payload) {
   }
 
   if (state === 'final') {
+    finalizeActivityGroup()
     const c = extractContent(payload.message)
     const finalText = c?.text
     const finalImages = c?.images || []
@@ -667,6 +695,7 @@ function handleAgentEvent(payload) {
     if (data?.phase === 'start') {
       _currentRunId = runId; showTyping(true); _isStreaming = true; updateSendState()
       clearTransientWarnings()
+      finalizeActivityGroup()
       // 安全超时：如果 60s 内没有 chat final / lifecycle end，强制重置
       clearTimeout(_streamSafetyTimer)
       _streamSafetyTimer = setTimeout(() => {
@@ -676,6 +705,7 @@ function handleAgentEvent(payload) {
     if (data?.phase === 'end') {
       showTyping(false)
       clearTimeout(_streamSafetyTimer)
+      finalizeActivityGroup()
       // 注意：lifecycle end 可能早于 chat.final 到达。
       // 这里不能 resetStreamState，否则 final 会再创建一次气泡，造成“流式后快速重复一遍”。
       _isStreaming = false
@@ -693,6 +723,7 @@ function handleAgentEvent(payload) {
       if (cleaned && cleaned.length > _currentAiText.length) {
         showTyping(false)
         clearTransientWarnings()
+        finalizeActivityGroup()
         if (!_currentAiBubble) { _currentAiBubble = createAiBubble(); _currentRunId = runId }
         _currentAiText = cleaned
         throttledRender()
@@ -702,7 +733,9 @@ function handleAgentEvent(payload) {
   }
 
   // tool 事件用 toolCallId + phase 跟踪
-  if (stream === 'tool') {
+  // OpenClaw 2026.5.x+ 把工具调用放在 agent.stream='item' / data.kind='tool' 里
+  const isToolEvent = stream === 'tool' || (stream === 'item' && data?.kind === 'tool')
+  if (isToolEvent) {
     const toolCallId = data?.toolCallId
     if (!toolCallId) return
     const name = data.name || 'tool'
@@ -710,13 +743,15 @@ function handleAgentEvent(payload) {
 
     let card = _toolCards.get(toolCallId)
     if (!card) {
-      card = createToolCard(name, phase === 'start' ? 'running' : 'done')
+      const initialStatus = phase === 'start' ? 'running' : (phase === 'error' ? 'error' : 'done')
+      card = createToolCard(name, initialStatus, data)
       _toolCards.set(toolCallId, card)
+      appendToolCardToActivity(card, data)
     }
-    if (phase === 'result' || phase === 'error') {
-      updateToolCard(card, phase === 'error' ? 'error' : 'done')
-    } else if (phase === 'update') {
-      updateToolCard(card, 'running')
+    if (phase === 'result' || phase === 'end' || phase === 'error') {
+      updateToolCard(card, phase === 'error' ? 'error' : 'done', data)
+    } else if (phase === 'start' || phase === 'update') {
+      updateToolCard(card, 'running', data)
     }
     scrollToBottom()
     return
@@ -748,6 +783,7 @@ function resetStreamState() {
   _currentRunId = null
   _isStreaming = false
   _toolCards.clear()
+  finalizeActivityGroup()
   markSessionPending(false)
   updateSendState()
 }
@@ -786,42 +822,339 @@ function createAiBubble(msgTime) {
   wrapper.className = 'msg ai'
   const bubble = document.createElement('div')
   bubble.className = 'msg-bubble'
-  
+
   // 添加光标
   const cursor = document.createElement('span')
   cursor.className = 'typing-cursor'
   cursor.innerHTML = ' ▋'
-  
+
   // 添加时间戳
   const time = document.createElement('div')
   time.className = 'msg-time'
   time.textContent = formatTime(msgTime || new Date())
-  
+
   wrapper.appendChild(bubble)
   wrapper.appendChild(cursor)
   wrapper.appendChild(time)
-  
+
   _messagesEl.insertBefore(wrapper, _typingEl)
   scrollToBottom()
   return bubble
 }
 
-function createToolCard(name, status) {
+// ==================== 工具调用链 / Activity 分组 ====================
+
+/** 格式化工具名：foo_bar -> Foo bar */
+function prettyToolName(name) {
+  const n = String(name || 'tool')
+  return n
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+/** 根据工具名和参数解析展示信息 */
+function resolveToolDisplay(name, args) {
+  const n = String(name || 'tool').toLowerCase()
+  let icon = SVG_TOOL_ZAP
+  if (n.includes('search') || n.includes('find') || n.includes('query')) icon = SVG_TOOL_SEARCH
+  else if (n.includes('read') || n.includes('file') || n.includes('write') || n.includes('edit')) icon = SVG_TOOL_FILE
+  else if (n.includes('web') || n.includes('http') || n.includes('url') || n.includes('fetch') || n.includes('browse')) icon = SVG_TOOL_GLOBE
+  else if (n.includes('settings') || n.includes('config') || n.includes('status')) icon = SVG_TOOL_SETTINGS
+  else if (n.includes('code') || n.includes('shell') || n.includes('bash') || n.includes('exec')) icon = SVG_TOOL_CODE
+  else if (n.includes('wrench') || n.includes('fix') || n.includes('build')) icon = SVG_TOOL_WRENCH
+
+  const label = prettyToolName(name)
+  const detail = formatToolDetailText(args)
+  return { label, icon, detail }
+}
+
+/** 从参数中提取简短摘要 */
+function formatToolDetailText(args) {
+  if (!args) return ''
+  if (typeof args === 'string') {
+    const trimmed = args.trim()
+    if (!trimmed) return ''
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        return summarizeToolArgs(parsed)
+      } catch { return trimmed.slice(0, 120) }
+    }
+    return trimmed.slice(0, 120)
+  }
+  return summarizeToolArgs(args)
+}
+
+function summarizeToolArgs(args) {
+  if (!args || typeof args !== 'object') return ''
+  const keys = Object.keys(args)
+  if (keys.length === 0) return ''
+  // 优先取常见摘要字段（OpenClaw item 事件用 title/meta）
+  for (const k of ['title', 'meta', 'path', 'file', 'url', 'query', 'command', 'name', 'topic', 'question']) {
+    const v = args[k]
+    if (v != null) return String(v).slice(0, 120)
+  }
+  const first = args[keys[0]]
+  if (first != null) return String(first).slice(0, 120)
+  return ''
+}
+
+function formatJson(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value, null, 2) }
+  catch { return String(value) }
+}
+
+function extractToolInput(data) {
+  if (data?.input != null) return formatJson(data.input)
+  if (data?.arguments != null) return formatJson(data.arguments)
+  if (data?.args != null) return formatJson(data.args)
+  return ''
+}
+
+function extractToolOutput(status, data) {
+  if (!data) return ''
+  if (status === 'error' && data.error != null) return formatJson(data.error)
+  if (data.output != null) return formatJson(data.output)
+  if (data.result != null) return formatJson(data.result)
+  if (data.response != null) return formatJson(data.response)
+  if (data.partialResult != null) return formatJson(data.partialResult)
+  return ''
+}
+
+/** 创建 Activity 分组容器 */
+function createActivityGroup() {
   const wrapper = document.createElement('div')
   wrapper.className = 'msg ai'
+  const group = document.createElement('div')
+  group.className = 'activity-group'
+
+  const summary = document.createElement('button')
+  summary.className = 'activity-summary'
+  summary.type = 'button'
+  summary.innerHTML = `
+    <span class="activity-icon">${SVG_TOOL_ACTIVITY}</span>
+    <span class="activity-label"></span>
+    <span class="activity-preview"></span>
+    <span class="activity-badge hidden">${SVG_TOOL_X}<span>${t('tool.error.badge')}</span></span>
+    <span class="activity-chevron">${SVG_TOOL_CHEVRON_DOWN}</span>
+  `
+
+  const body = document.createElement('div')
+  body.className = 'activity-body'
+
+  group.appendChild(summary)
+  group.appendChild(body)
+  wrapper.appendChild(group)
+  _messagesEl.insertBefore(wrapper, _typingEl)
+
+  const labelEl = summary.querySelector('.activity-label')
+  const previewEl = summary.querySelector('.activity-preview')
+  const badgeEl = summary.querySelector('.activity-badge')
+  const chevronEl = summary.querySelector('.activity-chevron')
+
+  summary.onclick = () => {
+    _currentActivityExpanded = !_currentActivityExpanded
+    group.classList.toggle('expanded', _currentActivityExpanded)
+    if (chevronEl) chevronEl.style.transform = _currentActivityExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+    scrollToBottom()
+  }
+
+  // 默认展开
+  group.classList.add('expanded')
+  if (chevronEl) chevronEl.style.transform = 'rotate(180deg)'
+
+  return { wrapper, group, body, summary, labelEl, previewEl, badgeEl, chevronEl }
+}
+
+function getOrCreateCurrentActivityGroup() {
+  if (_currentActivityGroup) return _currentActivityGroup
+  const created = createActivityGroup()
+  _currentActivityGroup = created.group
+  _currentActivityBody = created.body
+  _currentActivitySummaryLabel = created.labelEl
+  _currentActivityPreview = created.previewEl
+  _currentActivityBadge = created.badgeEl
+  _currentActivityChevron = created.chevronEl
+  _currentActivityCount = 0
+  _currentActivityToolNames = []
+  _currentActivityHasError = false
+  _currentActivityExpanded = true
+  return created.group
+}
+
+function appendToolCardToActivity(card, data) {
+  getOrCreateCurrentActivityGroup()
+  _currentActivityBody.appendChild(card)
+  _currentActivityCount++
+  const display = resolveToolDisplay(data?.name, data?.args ?? data?.arguments ?? data?.input)
+  if (display.label && !_currentActivityToolNames.includes(display.label)) {
+    _currentActivityToolNames.push(display.label)
+  }
+  updateActivitySummary()
+  scrollToBottom()
+}
+
+function updateActivitySummary() {
+  if (!_currentActivitySummaryLabel) return
+  _currentActivitySummaryLabel.textContent = t('activity.title', { n: _currentActivityCount })
+  if (_currentActivityPreview) {
+    const preview = _currentActivityToolNames.length <= 3
+      ? _currentActivityToolNames.join(', ')
+      : `${_currentActivityToolNames.slice(0, 2).join(', ')} +${_currentActivityToolNames.length - 2}`
+    _currentActivityPreview.textContent = preview
+    _currentActivityPreview.title = _currentActivityToolNames.join(', ')
+  }
+  if (_currentActivityBadge) {
+    _currentActivityBadge.classList.toggle('hidden', !_currentActivityHasError)
+  }
+}
+
+function finalizeActivityGroup() {
+  if (!_currentActivityGroup) return
+  // 如果 Activity 里只有一个工具，可以拆分为独立卡片展示，保持简洁
+  // 但 OpenClaw 会把单个 tool 消息也包在 Activity 里（当 group.messages.length > 1 时才折叠）
+  // 这里我们保留 Activity 容器，即使是单个工具也以 Activity 形式存在
+  _currentActivityGroup = null
+  _currentActivityBody = null
+  _currentActivitySummaryLabel = null
+  _currentActivityPreview = null
+  _currentActivityBadge = null
+  _currentActivityChevron = null
+  _currentActivityCount = 0
+  _currentActivityToolNames = []
+  _currentActivityHasError = false
+  _currentActivityExpanded = true
+}
+
+function createToolCard(name, status, data) {
+  const display = resolveToolDisplay(name, data?.args ?? data?.arguments ?? data?.input)
+  const inputText = extractToolInput(data)
+  const hasInput = !!inputText
+
   const card = document.createElement('div')
   card.className = 'tool-card'
-  card.innerHTML = `<div class="tool-name">🔧 ${escapeText(name)}</div><div class="tool-status ${status === 'running' ? 'running' : 'done'}">${statusText(status)}</div>`
-  wrapper.appendChild(card)
-  _messagesEl.insertBefore(wrapper, _typingEl)
+  card.dataset.toolCallId = data?.toolCallId || ''
+
+  const statusClass = status === 'running' ? 'running' : status === 'error' ? 'error' : 'done'
+  const isError = status === 'error'
+
+  card.innerHTML = `
+    <button class="tool-summary" type="button" aria-expanded="false">
+      <span class="tool-icon">${display.icon}</span>
+      <span class="tool-label">${escapeText(display.label)}</span>
+      ${display.detail ? `<span class="tool-detail">${escapeText(display.detail)}</span>` : ''}
+      ${isError ? `<span class="tool-error-badge">${SVG_TOOL_X}<span>${t('tool.error.badge')}</span></span>` : ''}
+      <span class="tool-status-icon ${statusClass}">${status === 'running' ? '' : (isError ? SVG_TOOL_X : SVG_TOOL_CHECK)}</span>
+      <span class="tool-chevron">${SVG_TOOL_CHEVRON_DOWN}</span>
+    </button>
+    <div class="tool-body hidden">
+      ${hasInput ? `<div class="tool-block"><div class="tool-block-header"><span class="tool-block-icon">${SVG_TOOL_ZAP}</span><span class="tool-block-label">${t('tool.input')}</span></div><pre class="tool-block-content"><code>${escapeText(inputText)}</code></pre></div>` : ''}
+      <div class="tool-block tool-output-block hidden">
+        <div class="tool-block-header"><span class="tool-block-icon">${SVG_TOOL_ZAP}</span><span class="tool-block-label tool-output-label">${t('tool.output')}</span></div>
+        <pre class="tool-block-content"><code></code></pre>
+      </div>
+      <div class="tool-raw hidden">
+        <button class="tool-raw-toggle" type="button" aria-expanded="false">
+          <span>${t('tool.rawDetails')}</span>
+          <span class="tool-chevron">${SVG_TOOL_CHEVRON_DOWN}</span>
+        </button>
+        <div class="tool-raw-body hidden"><pre class="tool-block-content"><code></code></pre></div>
+      </div>
+    </div>
+  `
+
+  const summary = card.querySelector('.tool-summary')
+  const body = card.querySelector('.tool-body')
+  const chevron = card.querySelector('.tool-summary .tool-chevron')
+
+  summary.onclick = () => {
+    const expanded = body.classList.toggle('hidden')
+    summary.setAttribute('aria-expanded', String(!expanded))
+    if (chevron) chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(180deg)'
+    scrollToBottom()
+  }
+
+  const rawToggle = card.querySelector('.tool-raw-toggle')
+  const rawBody = card.querySelector('.tool-raw-body')
+  if (rawToggle && rawBody) {
+    rawToggle.onclick = () => {
+      const hidden = rawBody.classList.toggle('hidden')
+      rawToggle.setAttribute('aria-expanded', String(!hidden))
+      scrollToBottom()
+    }
+  }
+
   return card
 }
 
-function updateToolCard(card, status) {
-  const statusEl = card.querySelector('.tool-status')
-  if (statusEl) {
-    statusEl.className = `tool-status ${status === 'running' ? 'running' : status === 'error' ? 'error' : 'done'}`
-    statusEl.textContent = statusText(status)
+function updateToolCard(card, status, data) {
+  const isError = status === 'error'
+  const statusIcon = card.querySelector('.tool-status-icon')
+  if (statusIcon) {
+    statusIcon.className = `tool-status-icon ${isError ? 'error' : status === 'running' ? 'running' : 'done'}`
+    statusIcon.innerHTML = status === 'running' ? '' : (isError ? SVG_TOOL_X : SVG_TOOL_CHECK)
+  }
+
+  const summary = card.querySelector('.tool-summary')
+  const display = resolveToolDisplay(data?.name, data?.args ?? data?.arguments ?? data?.input)
+  const detailEl = card.querySelector('.tool-detail')
+  if (detailEl && display.detail) detailEl.textContent = display.detail
+
+  // 确保错误 badge 存在
+  if (isError && summary && !card.querySelector('.tool-error-badge')) {
+    const badge = document.createElement('span')
+    badge.className = 'tool-error-badge'
+    badge.innerHTML = `${SVG_TOOL_X}<span>${t('tool.error.badge')}</span>`
+    summary.insertBefore(badge, statusIcon)
+  }
+
+  // 输出
+  const outputText = extractToolOutput(status, data)
+  if (outputText) {
+    const outputBlock = card.querySelector('.tool-output-block')
+    const outputCode = outputBlock?.querySelector('code')
+    const outputLabel = card.querySelector('.tool-output-label')
+    if (outputBlock && outputCode) {
+      outputCode.textContent = outputText
+      if (outputLabel) outputLabel.textContent = isError ? t('tool.error') : t('tool.output')
+      outputBlock.classList.remove('hidden')
+    }
+
+    // 原始详情（用于 canvas 等场景，当前复用 output）
+    const rawBody = card.querySelector('.tool-raw-body')
+    const rawCode = rawBody?.querySelector('code')
+    const rawToggle = card.querySelector('.tool-raw-toggle')
+    if (rawBody && rawCode && rawToggle) {
+      rawCode.textContent = outputText
+      rawToggle.classList.remove('hidden')
+    }
+
+    // 出错时自动展开
+    if (isError) {
+      const body = card.querySelector('.tool-body')
+      const chevron = card.querySelector('.tool-summary .tool-chevron')
+      if (body) body.classList.remove('hidden')
+      summary?.setAttribute('aria-expanded', 'true')
+      if (chevron) chevron.style.transform = 'rotate(180deg)'
+    }
+  }
+
+  // 更新 Activity 错误状态
+  if (isError && _currentActivityGroup) {
+    _currentActivityHasError = true
+    _currentActivityGroup.classList.add('has-error')
+    const summaryEl = _currentActivityGroup.querySelector('.activity-summary')
+    if (summaryEl) summaryEl.classList.add('activity-summary--error')
+    // 出错时自动展开 Activity
+    if (!_currentActivityExpanded) {
+      _currentActivityExpanded = true
+      _currentActivityGroup.classList.add('expanded')
+      if (_currentActivityChevron) _currentActivityChevron.style.transform = 'rotate(180deg)'
+    }
+    updateActivitySummary()
   }
 }
 
@@ -1190,6 +1523,7 @@ function clearMessages() {
   if (!_messagesEl) return
   const children = Array.from(_messagesEl.children)
   children.forEach(child => { if (child !== _typingEl) _messagesEl.removeChild(child) })
+  finalizeActivityGroup()
 }
 
 /**

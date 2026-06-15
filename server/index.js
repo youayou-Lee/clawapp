@@ -253,7 +253,7 @@ function createConnectFrame(nonce) {
     id: `connect-${randomUUID()}`,
     method: 'connect',
     params: {
-      minProtocol: 3, maxProtocol: 3,
+      minProtocol: 4, maxProtocol: 4,
       client: { id: 'gateway-client', displayName: 'ClawApp', version: '2.0.0', platform, deviceFamily, mode: 'backend' },
       role: 'operator',
       scopes: SCOPES,
@@ -288,7 +288,7 @@ function createNodeConnectFrame(nonce) {
     id: `connect-node-${randomUUID()}`,
     method: 'connect',
     params: {
-      minProtocol: 3, maxProtocol: 3,
+      minProtocol: 4, maxProtocol: 4,
       client: { id: 'node-host', displayName: 'ClawApp Node', version: '2.0.0', platform, deviceFamily, mode: 'node' },
       role: 'node',
       scopes: [],
