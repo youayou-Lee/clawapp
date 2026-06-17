@@ -2,22 +2,22 @@
 
 /* 暗色主题（默认） */
 :root, [data-theme="dark"] {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-card: #2a2a3e;
-  --bg-input: #232340;
-  --bg-code: #0d1117;
-  --bubble-user: #0f3460;
-  --bubble-ai: #2a2a3e;
-  --accent: #e94560;
-  --accent-hover: #ff6b81;
-  --text-primary: #e8e8f0;
-  --text-secondary: #9898b0;
-  --text-muted: #6a6a80;
-  --border: #333355;
-  --success: #2ecc71;
-  --warning: #f39c12;
-  --danger: #e74c3c;
+  --bg-primary: #ffffff;
+  --bg-secondary: #ffffff;
+  --bg-card: #f5f5f7;
+  --bg-input: #f0f0f2;
+  --bg-code: #f6f8fa;
+  --bubble-user: #009396;
+  --bubble-ai: #EBF6F7;
+  --accent: #009396;
+  --accent-hover: #EBF6F7;
+  --text-primary: #1c1c1e;
+  --text-secondary: #6e6e73;
+  --text-muted: #aeaeb2;
+  --border: #d1d1d6;
+  --success: #009396;
+  --warning: #009396;
+  --danger: #009396;
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
@@ -30,43 +30,61 @@
 
 /* 亮色主题 */
 [data-theme="light"] {
-  --bg-primary: #f5f5f7;
+  --bg-primary: #ffffff;
   --bg-secondary: #ffffff;
-  --bg-card: #eeeef0;
+  --bg-card: #f5f5f7;
   --bg-input: #f0f0f2;
   --bg-code: #f6f8fa;
-  --bubble-user: #007aff;
-  --bubble-ai: #e9e9eb;
-  --accent: #e94560;
-  --accent-hover: #d63851;
+  --bubble-user: #009396;
+  --bubble-ai: #EBF6F7;
+  --accent: #009396;
+  --accent-hover: #EBF6F7;
   --text-primary: #1c1c1e;
   --text-secondary: #6e6e73;
   --text-muted: #aeaeb2;
   --border: #d1d1d6;
-  --success: #34c759;
-  --warning: #ff9500;
-  --danger: #ff3b30;
+  --success: #009396;
+  --warning: #009396;
+  --danger: #009396;
 }
 
 /* 亮色主题特殊覆盖 */
-[data-theme="light"] .msg.user .msg-bubble {
+[data-theme="light"] .msg.user .msg-bubble,
+:root .msg.user .msg-bubble,
+[data-theme="dark"] .msg.user .msg-bubble {
   color: #fff;
+}
+
+[data-theme="dark"] .msg-bubble strong,
+:root .msg-bubble strong {
+  color: #1c1c1e;
 }
 
 [data-theme="light"] .msg-bubble strong {
   color: #1c1c1e;
 }
 
+[data-theme="dark"] .msg-bubble code,
+:root .msg-bubble code {
+  background: #e8e8ea;
+}
+
 [data-theme="light"] .msg-bubble code {
   background: #e8e8ea;
 }
 
-[data-theme="light"] .hl-keyword { color: #d73a49; }
-[data-theme="light"] .hl-string { color: #032f62; }
-[data-theme="light"] .hl-comment { color: #6a737d; }
-[data-theme="light"] .hl-number { color: #005cc5; }
-[data-theme="light"] .hl-func { color: #6f42c1; }
-[data-theme="light"] .hl-type { color: #e36209; }
+[data-theme="dark"] .hl-keyword,
+:root .hl-keyword { color: #d73a49; }
+[data-theme="dark"] .hl-string,
+:root .hl-string { color: #032f62; }
+[data-theme="dark"] .hl-comment,
+:root .hl-comment { color: #6a737d; font-style: italic; }
+[data-theme="dark"] .hl-number,
+:root .hl-number { color: #005cc5; }
+[data-theme="dark"] .hl-func,
+:root .hl-func { color: #6f42c1; }
+[data-theme="dark"] .hl-type,
+:root .hl-type { color: #e36209; }
 
 /* Logo 背景适配 */
 .logo-bg { fill: #1a1a2e; }
@@ -376,7 +394,7 @@ html, body {
 }
 
 .chat-header .settings-btn:active {
-  background: rgba(255,255,255,0.08);
+  background: rgba(0, 147, 150, 0.08);
 }
 
 .chat-messages {
@@ -396,6 +414,37 @@ html, body {
 .chat-messages::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
+}
+
+/* 暗色主题覆盖：在白底上使用深色文字 */
+[data-theme="dark"] .msg-bubble,
+:root .msg-bubble {
+  color: #1c1c1e;
+}
+
+[data-theme="dark"] .msg.ai .msg-bubble,
+:root .msg.ai .msg-bubble {
+  color: #1c1c1e;
+}
+
+[data-theme="dark"] .system-msg,
+:root .system-msg {
+  color: #6e6e73;
+}
+
+[data-theme="dark"] .tool-block-content,
+:root .tool-block-content {
+  color: #1c1c1e;
+}
+
+[data-theme="dark"] .tool-raw-toggle,
+:root .tool-raw-toggle {
+  color: #6e6e73;
+}
+
+[data-theme="dark"] .typing-indicator span,
+:root .typing-indicator span {
+  background: #6e6e73;
 }
 
 .msg {
@@ -604,7 +653,7 @@ html, body {
   gap: 3px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(231, 76, 60, 0.15);
+  background: rgba(0, 147, 150, 0.15);
   color: var(--danger);
   font-size: 10px;
   font-weight: 600;
@@ -858,7 +907,7 @@ html, body {
   margin-left: auto;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(231, 76, 60, 0.15);
+  background: rgba(0, 147, 150, 0.15);
   color: var(--danger);
   font-size: 10px;
   font-weight: 600;

@@ -72,7 +72,11 @@ export async function refreshSessionList() {
 
   try {
     const result = await wsClient.sessionsList(50)
-    const sessions = result?.sessions || result || []
+    const sessions = (result?.sessions || result || [])
+      .filter(s => {
+        const key = s.sessionKey || s.key || ''
+        return key.startsWith('agent:role-gong:')
+      })
     listEl.innerHTML = ''
 
     if (!sessions.length) {
@@ -93,7 +97,8 @@ export async function refreshSessionList() {
       if (parts.length >= 3) {
         const agent = parts[1]
         const channel = parts.slice(2).join(':')
-        name = channel === 'main' ? `${t('session.main')} (${agent})` : channel
+        // role-gong agent：标题栏显示时间戳，列表中显示会话名
+        name = channel === 'main' ? `${t('session.main')}` : channel
         detail = agent !== 'main' ? `agent: ${agent}` : ''
       }
 
@@ -165,12 +170,9 @@ function promptNewSession() {
     </div>
   `
 
-  dialog.querySelector('#agent-toggle').onclick = () => {
-    const f = dialog.querySelector('#agent-field')
-    const visible = f.style.display !== 'none'
-    f.style.display = visible ? 'none' : 'block'
-    dialog.querySelector('#agent-arrow').textContent = visible ? '▶' : '▼'
-  }
+  dialog.querySelector('#agent-toggle').style.display = 'none'
+  dialog.querySelector('#agent-field').style.display = 'none'
+  dialog.querySelector('#new-session-agent').value = 'role-gong'
   overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); dialog.remove() } }
   dialog.querySelector('.cancel').onclick = () => { overlay.remove(); dialog.remove() }
   dialog.querySelector('.confirm').onclick = () => {

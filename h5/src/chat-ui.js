@@ -186,14 +186,17 @@ export function createChatPage() {
 }
 
 export function setSessionKey(key) {
-  // 记录服务端默认会话，但不要在重连时覆盖用户当前会话
+  // 优先恢复本地保存的会话（role-gong agent 下）
   _serverSessionKey = key || ''
-
-  // 仅在首次初始化（当前无会话）时设置 active session
-  if (!_sessionKey) {
-    const saved = localStorage.getItem(STORAGE_SESSION_KEY)
-    _sessionKey = saved || _serverSessionKey || ''
-    if (_sessionKey) localStorage.setItem(STORAGE_SESSION_KEY, _sessionKey)
+  const saved = localStorage.getItem(STORAGE_SESSION_KEY)
+  if (saved && saved.startsWith('agent:role-gong:')) {
+    _sessionKey = saved
+  } else if (key && key.startsWith('agent:role-gong:')) {
+    _sessionKey = key
+    localStorage.setItem(STORAGE_SESSION_KEY, key)
+  } else {
+    _sessionKey = 'agent:role-gong:main'
+    localStorage.setItem(STORAGE_SESSION_KEY, _sessionKey)
   }
 
   setPickerSessionKey(_sessionKey)
@@ -418,6 +421,13 @@ async function sendMessage() {
   _textarea.style.height = 'auto'
   clearAttachments()
   updateSendState()
+
+  // 本地快捷命令：/clear 清空当前会话的页面消息和本地缓存，同时继续发送给 Gateway
+  if (text === '/clear') {
+    clearMessages()
+    await clearSessionMessages(_sessionKey)
+    appendSystemMessage('对话已清空')
+  }
 
   // 如果正在发送或流式响应中，加入队列
   if (_isSending || _isStreaming) {
@@ -1672,18 +1682,12 @@ export function abortChat() {
 function updateSessionTitle() {
   const titleEl = document.getElementById('session-title')
   if (!titleEl) return
-  // 从 sessionKey 提取可读名称
-  // 格式: agent:main:main 或 agent:main:qqbot:dm:xxx
-  const parts = _sessionKey.split(':')
-  let label = 'ClawApp'
-  if (parts.length >= 3) {
-    const agent = parts[1]
-    const channel = parts.slice(2).join(':')
-    if (channel === 'main') label = t('session.main')
-    else label = channel.length > 20 ? channel.substring(0, 20) + '…' : channel
-    if (agent !== 'main') label = `[${agent}] ${label}`
-  }
-  titleEl.textContent = label
+  // role-gong agent：标题栏显示当前时间
+  const now = new Date()
+  const h = now.getHours().toString().padStart(2, '0')
+  const m = now.getMinutes().toString().padStart(2, '0')
+  const s = now.getSeconds().toString().padStart(2, '0')
+  titleEl.textContent = `${h}:${m}:${s}`
   titleEl.title = _sessionKey
 }
 
@@ -1720,6 +1724,10 @@ function hideDisconnectBanner() {
 
 /** 切换到指定会话 */
 function switchSession(newKey) {
+  // 只允许 role-gong agent 下的会话
+  if (!newKey.startsWith('agent:role-gong:')) {
+    newKey = 'agent:role-gong:main'
+  }
   _sessionKey = newKey
   setPickerSessionKey(newKey)
   localStorage.setItem(STORAGE_SESSION_KEY, newKey)

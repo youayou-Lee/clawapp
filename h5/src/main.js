@@ -35,11 +35,11 @@ function createSetupPage() {
       <div class="setup-logo">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
           <defs>
-            <linearGradient id="sg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#e94560"/><stop offset="100%" stop-color="#0f3460"/></linearGradient>
+            <linearGradient id="sg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#009396"/><stop offset="100%" stop-color="#0f3460"/></linearGradient>
           </defs>
           <rect width="64" height="64" rx="14" class="logo-bg"/>
           <path d="M32 12C20.954 12 12 20.954 12 32s8.954 20 20 20c2.5 0 4.9-.46 7.1-1.3L48 54l-1.3-8.9A19.9 19.9 0 0052 32c0-11.046-8.954-20-20-20z" stroke="url(#sg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="24" cy="32" r="3" fill="#e94560"/><circle cx="32" cy="32" r="3" fill="#e94560"/><circle cx="40" cy="32" r="3" fill="#e94560"/>
+          <circle cx="24" cy="32" r="3" fill="#009396"/><circle cx="32" cy="32" r="3" fill="#009396"/><circle cx="40" cy="32" r="3" fill="#009396"/>
         </svg>
         <h1>${t('app.title')}</h1>
         <p>${t('app.subtitle')}</p>
@@ -175,6 +175,16 @@ function initApp() {
   if (config) {
     hostInput.value = config.host
     tokenInput.value = config.token
+
+  // URL 参数自动填充 token 并自动连接（免输入）
+  const urlParams = new URLSearchParams(window.location.search)
+  const urlToken = urlParams.get('token')
+  if (urlToken) {
+    tokenInput.value = urlToken
+    if (hostInput.value) {
+      setTimeout(() => connectBtn.click(), 100)
+    }
+  }
   }
 
   // 首次运行检测

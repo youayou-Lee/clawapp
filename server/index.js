@@ -124,6 +124,7 @@ function buildContentDisposition(filename) {
 const CONFIG = {
   port: parseInt(process.env.PROXY_PORT, 10) || 3210,
   proxyToken: process.env.PROXY_TOKEN || '',
+  bypassLogin: process.env.BYPASS_H5_LOGIN === 'true',
   gatewayUrl: process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789',
   gatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN || '',
   gatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD || '',
@@ -304,6 +305,7 @@ function createNodeConnectFrame(nonce) {
 
 /** 验证 token */
 function validateToken(token) {
+  if (CONFIG.bypassLogin) return true;
   if (!CONFIG.proxyToken) return true;
   return token === CONFIG.proxyToken;
 }
@@ -1032,7 +1034,7 @@ app.post('/api/connect', async (req, res) => {
     if (lastError) throw lastError;
 
     const defaults = session.snapshot?.sessionDefaults;
-    const sessionKey = defaults?.mainSessionKey || `agent:${defaults?.defaultAgentId || 'main'}:main`;
+    const sessionKey = 'agent:role-gong:main';
 
     log.info(`会话建立成功 [${sid}]`);
     res.json({ ok: true, sid, snapshot: session.snapshot, hello: session.hello, sessionKey });
