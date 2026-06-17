@@ -4,7 +4,7 @@ import { initMedia, pickImage, pickMedia, getAttachments, clearAttachments, hasA
 import { initCommands, showCommands } from './commands.js'
 import { t, formatRelativeTime } from './i18n.js'
 import { initSettings, showSettings } from './settings.js'
-import { saveMessage, saveMessages, getLocalMessages, clearSessionMessages, isStorageAvailable, saveSessionInfo } from './message-db.js'
+import { saveMessage, saveMessages, getLocalMessages, clearSessionMessages, isStorageAvailable, saveSessionInfo, saveToolEvent, getToolEvents, clearToolEvents, pruneToolEvents, updateToolEventOutput, deleteCommandOutputChunks } from './message-db.js'
 import { requestPermission, showNotification, isSupported as isNotifySupported } from './notify.js'
 import { initSessionPicker, setPickerSessionKey, showSessionPicker } from './session-picker.js'
 
@@ -426,6 +426,7 @@ async function sendMessage() {
   if (text === '/clear') {
     clearMessages()
     await clearSessionMessages(_sessionKey)
+    await clearToolEvents(_sessionKey)
     appendSystemMessage('对话已清空')
   }
 
@@ -717,6 +718,7 @@ function handleAgentEvent(payload) {
       showTyping(false)
       clearTimeout(_streamSafetyTimer)
       finalizeActivityGroup()
+      snapshotToolOutputs()
       // 注意：lifecycle end 可能早于 chat.final 到达。
       // 这里不能 resetStreamState，否则 final 会再创建一次气泡，造成“流式后快速重复一遍”。
       _isStreaming = false
@@ -764,6 +766,7 @@ function handleAgentEvent(payload) {
     } else if (phase === 'start' || phase === 'update') {
       updateToolCard(card, 'running', data)
     }
+    saveToolEvent({ sessionKey: _sessionKey, runId, toolCallId, stream, phase, data, timestamp: Date.now() })
     scrollToBottom()
     return
   }
@@ -778,12 +781,26 @@ function handleAgentEvent(payload) {
     acc.chunks.push(output)
     const card = _toolCards.get(toolCallId)
     if (card) updateToolCardOutput(card, null, acc)
+    saveToolEvent({ sessionKey: _sessionKey, runId, toolCallId, stream: 'command_output', data: { output }, timestamp: Date.now() })
     scrollToBottom()
     return
   }
 }
 
+function snapshotToolOutputs() {
+  if (!_sessionKey || _toolOutputs.size === 0) return
+  for (const [toolCallId, acc] of _toolOutputs.entries()) {
+    if (!acc.chunks.length) continue
+    const outputText = formatCommandOutput(acc)
+    if (outputText) {
+      updateToolEventOutput(_sessionKey, toolCallId, outputText)
+      deleteCommandOutputChunks(_sessionKey, toolCallId)
+    }
+  }
+}
+
 function resetStreamState() {
+  snapshotToolOutputs()
   clearTimeout(_streamSafetyTimer)
   // 最后一次渲染确保完整
   if (_currentAiBubble && (_currentAiText || _currentAiImages.length || _currentAiVideos.length || _currentAiAudios.length || _currentAiFiles.length)) {
@@ -1563,40 +1580,48 @@ export async function loadHistory() {
     if (!chatResult?.messages?.length) {
       if (!_messagesEl.querySelector('.msg')) { clearMessages(); appendSystemMessage(t('chat.no.messages')) }
       if (notifyItems.length) insertNotifyItemsInOrder(notifyItems)
-      return
-    }
-    // 去重
-    const deduped = dedupeHistory(chatResult.messages)
-    // 算 hash，没变就跳过渲染
-    const hash = deduped.map(m => `${m.role}:${m.text?.length || 0}`).join('|')
-    if (hash === _lastHistoryHash && hasExisting && !notifyItems.length) return
-    _lastHistoryHash = hash
+    } else {
+      // 去重
+      const deduped = dedupeHistory(chatResult.messages)
+      // 算 hash，没变就跳过渲染
+      const hash = deduped.map(m => `${m.role}:${m.text?.length || 0}`).join('|')
+      if (hash === _lastHistoryHash && hasExisting && !notifyItems.length) return
+      _lastHistoryHash = hash
 
-    // 有待发送/发送中的本地消息时，不要全量重绘，避免覆盖本地乐观渲染
-    if (hasExisting && (_isSending || _isStreaming || _messageQueue.length > 0)) {
+      // 有待发送/发送中的本地消息时，不要全量重绘，避免覆盖本地乐观渲染
+      if (hasExisting && (_isSending || _isStreaming || _messageQueue.length > 0)) {
+        saveMessages(chatResult.messages.map(m => {
+          const c = extractContent(m)
+          return { id: m.id || uuid(), sessionKey: _sessionKey, role: m.role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
+        }))
+        return
+      }
+
+      clearMessages()
+      deduped.forEach(msg => {
+        const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
+        if (msg.role === 'user') {
+          appendUserMessage(msg.text, msg.images?.length ? msg.images.map(i => ({ content: i.data, mimeType: i.mediaType, category: 'image' })) : null, msgTime)
+        } else if (msg.role === 'assistant') {
+          appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files)
+        }
+      })
+      // 将通知条按时间插到对应位置
+      insertNotifyItemsInOrder(notifyItems)
       saveMessages(chatResult.messages.map(m => {
         const c = extractContent(m)
         return { id: m.id || uuid(), sessionKey: _sessionKey, role: m.role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
       }))
-      return
     }
 
-    clearMessages()
-    deduped.forEach(msg => {
-      const msgTime = msg.timestamp ? new Date(msg.timestamp) : new Date()
-      if (msg.role === 'user') {
-        appendUserMessage(msg.text, msg.images?.length ? msg.images.map(i => ({ content: i.data, mimeType: i.mediaType, category: 'image' })) : null, msgTime)
-      } else if (msg.role === 'assistant') {
-        appendAiMessage(msg.text, msgTime, msg.images, msg.videos, msg.audios, msg.files)
-      }
-    })
-    // 将通知条按时间插到对应位置
-    insertNotifyItemsInOrder(notifyItems)
-    saveMessages(chatResult.messages.map(m => {
-      const c = extractContent(m)
-      return { id: m.id || uuid(), sessionKey: _sessionKey, role: m.role, content: c?.text || '', timestamp: m.timestamp || Date.now() }
-    }))
+    // 重建本地保存的工具调用链
+    if (isStorageAvailable()) {
+      const toolEvents = await getToolEvents(_sessionKey, 0, 500)
+      if (toolEvents.length) replayToolEvents(toolEvents)
+      pruneToolEvents(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    }
     scrollToBottom()
+
   } catch (e) {
     console.error('[chat] loadHistory error:', e)
     if (isSessionMissingError(e.message)) {
@@ -1636,6 +1661,86 @@ function clearMessages() {
   if (!_messagesEl) return
   const children = Array.from(_messagesEl.children)
   children.forEach(child => { if (child !== _typingEl) _messagesEl.removeChild(child) })
+  finalizeActivityGroup()
+}
+
+/** 按时间戳把 Activity 分组插入到正确位置 */
+function insertActivityAtTimestamp(wrapper, timestamp) {
+  if (!_messagesEl || !wrapper) return
+  const msgEls = Array.from(_messagesEl.children).filter(
+    el => el !== _typingEl && el.dataset.msgTime
+  )
+  const after = msgEls.find(el => Number(el.dataset.msgTime) > timestamp)
+  if (after && after !== wrapper.nextElementSibling) {
+    _messagesEl.insertBefore(wrapper, after)
+  }
+}
+
+/** 从本地 tool 事件重建调用链 UI */
+function replayToolEvents(events) {
+  if (!events?.length) return
+  _toolCards.clear()
+  _toolOutputs.clear()
+  finalizeActivityGroup()
+
+  // 按 runId 分组，并按每组首个事件时间排序
+  const byRun = new Map()
+  for (const ev of events) {
+    const runId = ev.runId || 'unknown'
+    if (!byRun.has(runId)) byRun.set(runId, [])
+    byRun.get(runId).push(ev)
+  }
+  const runs = Array.from(byRun.entries())
+    .map(([runId, runEvents]) => ({ runId, runEvents }))
+    .sort((a, b) => a.runEvents[0].timestamp - b.runEvents[0].timestamp)
+
+  for (const { runId, runEvents } of runs) {
+    runEvents.sort((a, b) => a.timestamp - b.timestamp)
+    const firstTs = runEvents[0].timestamp
+    let wrapper = null
+
+    for (const ev of runEvents) {
+      const { stream, phase, data, toolCallId, commandOutput } = ev
+      const isToolLike = stream === 'tool' || (stream === 'item' && (data?.kind === 'tool' || data?.kind === 'command'))
+
+      if (isToolLike && toolCallId) {
+        let card = _toolCards.get(toolCallId)
+        if (!card) {
+          const initialStatus = phase === 'start' ? 'running' : (phase === 'error' ? 'error' : 'done')
+          card = createToolCard(data?.name || 'tool', initialStatus, data)
+          _toolCards.set(toolCallId, card)
+          appendToolCardToActivity(card, data)
+        }
+        if (phase === 'result' || phase === 'end' || phase === 'error') {
+          updateToolCard(card, phase === 'error' ? 'error' : 'done', data)
+        } else if (phase === 'start' || phase === 'update') {
+          updateToolCard(card, 'running', data)
+        }
+        wrapper = _currentActivityGroup?.parentElement
+        continue
+      }
+
+      if (stream === 'command_output' && toolCallId) {
+        const card = _toolCards.get(toolCallId)
+        if (!card) continue
+        if (commandOutput) {
+          updateToolCardOutput(card, null, { chunks: [commandOutput], done: true })
+        } else if (data?.output != null) {
+          let acc = _toolOutputs.get(toolCallId)
+          if (!acc) { acc = { chunks: [], done: false }; _toolOutputs.set(toolCallId, acc) }
+          acc.chunks.push(data.output)
+          updateToolCardOutput(card, null, acc)
+        }
+      }
+    }
+
+    if (_currentActivityGroup) {
+      wrapper = _currentActivityGroup.parentElement
+      finalizeActivityGroup()
+    }
+    if (wrapper) insertActivityAtTimestamp(wrapper, firstTs)
+  }
+
   finalizeActivityGroup()
 }
 

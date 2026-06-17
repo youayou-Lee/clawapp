@@ -9,9 +9,10 @@
  */
 
 const DB_NAME = 'clawapp-messages'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'messages'
 const STORE_SESSIONS = 'sessions'
+const STORE_TOOL_EVENTS = 'tool_events'
 
 let _db = null
 
@@ -43,6 +44,16 @@ function openDB() {
       // 会话索引存储
       if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
         db.createObjectStore(STORE_SESSIONS, { keyPath: 'sessionKey' })
+      }
+
+      // v2: 工具调用事件存储（用于刷新后重建调用链）
+      if (!db.objectStoreNames.contains(STORE_TOOL_EVENTS)) {
+        const toolStore = db.createObjectStore(STORE_TOOL_EVENTS, { keyPath: 'id', autoIncrement: true })
+        toolStore.createIndex('sessionKey', 'sessionKey', { unique: false })
+        toolStore.createIndex('sessionKey_runId', ['sessionKey', 'runId'], { unique: false })
+        toolStore.createIndex('toolCallId', 'toolCallId', { unique: false })
+        toolStore.createIndex('timestamp', 'timestamp', { unique: false })
+        toolStore.createIndex('sessionKey_timestamp', ['sessionKey', 'timestamp'], { unique: false })
       }
     }
   })
@@ -94,6 +105,210 @@ export async function saveMessages(messages) {
     })
   } catch (e) {
     console.error('[db] saveMessages error:', e)
+  }
+}
+
+/** 保存 agent 工具事件到本地 */
+export async function saveToolEvent(event) {
+  if (!event) return
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_TOOL_EVENTS, 'readwrite')
+    const store = tx.objectStore(STORE_TOOL_EVENTS)
+
+    const record = {
+      sessionKey: event.sessionKey || '',
+      runId: event.runId || '',
+      toolCallId: event.toolCallId || '',
+      stream: event.stream || '',
+      phase: event.phase || '',
+      data: event.data || null,
+      timestamp: event.timestamp || Date.now(),
+      commandOutput: event.commandOutput || ''
+    }
+
+    // 对 tool/item 事件做轻量去重：同一 toolCallId + phase 在 5s 内只更新
+    if (record.toolCallId && (record.stream === 'tool' || record.stream === 'item') && record.phase) {
+      const index = store.index('toolCallId')
+      const range = IDBKeyRange.bound(record.toolCallId, record.toolCallId)
+      const existing = await new Promise((resolve, reject) => {
+        let found = null
+        const req = index.openCursor(range, 'prev')
+        req.onsuccess = (e) => {
+          const cursor = e.target.result
+          if (cursor && !found) {
+            const val = cursor.value
+            if (val.sessionKey === record.sessionKey &&
+                val.stream === record.stream &&
+                val.phase === record.phase &&
+                Math.abs(val.timestamp - record.timestamp) < 5000) {
+              found = { value: val, cursor }
+            }
+            if (!found) cursor.continue()
+            else resolve(found)
+          } else {
+            resolve(null)
+          }
+        }
+        req.onerror = () => reject(req.error)
+      }).catch(() => null)
+
+      if (existing) {
+        existing.value.data = record.data
+        existing.value.timestamp = record.timestamp
+        store.put(existing.value)
+        return
+      }
+    }
+
+    store.put(record)
+  } catch (e) {
+    console.error('[db] saveToolEvent error:', e)
+  }
+}
+
+/** 获取会话的工具事件（按时间正序） */
+export async function getToolEvents(sessionKey, since = 0, limit = 500) {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TOOL_EVENTS, 'readonly')
+      const store = tx.objectStore(STORE_TOOL_EVENTS)
+      const index = store.index('sessionKey_timestamp')
+      const range = IDBKeyRange.bound(
+        [sessionKey, since],
+        [sessionKey, Date.now()]
+      )
+      const events = []
+      const request = index.openCursor(range, 'next')
+      request.onsuccess = (event) => {
+        const cursor = event.target.result
+        if (cursor && events.length < limit) {
+          events.push(cursor.value)
+          cursor.continue()
+        }
+      }
+      tx.oncomplete = () => resolve(events)
+      tx.onerror = () => resolve([])
+    })
+  } catch (e) {
+    console.error('[db] getToolEvents error:', e)
+    return []
+  }
+}
+
+/** 删除会话的所有工具事件 */
+export async function clearToolEvents(sessionKey) {
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_TOOL_EVENTS, 'readwrite')
+    const store = tx.objectStore(STORE_TOOL_EVENTS)
+    const index = store.index('sessionKey')
+    const request = index.openCursor(sessionKey)
+    request.onsuccess = (event) => {
+      const cursor = event.target.result
+      if (cursor) {
+        cursor.delete()
+        cursor.continue()
+      }
+    }
+  } catch (e) {
+    console.error('[db] clearToolEvents error:', e)
+  }
+}
+
+/** 删除指定时间之前的所有工具事件 */
+export async function pruneToolEvents(beforeTimestamp) {
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_TOOL_EVENTS, 'readwrite')
+    const store = tx.objectStore(STORE_TOOL_EVENTS)
+    const index = store.index('timestamp')
+    const range = IDBKeyRange.upperBound(beforeTimestamp)
+    const request = index.openCursor(range)
+    request.onsuccess = (event) => {
+      const cursor = event.target.result
+      if (cursor) {
+        cursor.delete()
+        cursor.continue()
+      }
+    }
+  } catch (e) {
+    console.error('[db] pruneToolEvents error:', e)
+  }
+}
+
+/** 把累积的 command_output 快照更新到对应的工具事件 */
+export async function updateToolEventOutput(sessionKey, toolCallId, commandOutput) {
+  if (!sessionKey || !toolCallId || !commandOutput) return
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_TOOL_EVENTS, 'readwrite')
+    const store = tx.objectStore(STORE_TOOL_EVENTS)
+    const index = store.index('toolCallId')
+    const range = IDBKeyRange.bound(toolCallId, toolCallId)
+
+    const updated = await new Promise((resolve, reject) => {
+      let resolved = false
+      const req = index.openCursor(range, 'prev')
+      req.onsuccess = (e) => {
+        const cursor = e.target.result
+        if (!cursor) {
+          if (!resolved) { resolved = true; resolve(false) }
+          return
+        }
+        const val = cursor.value
+        if (val.sessionKey === sessionKey && val.toolCallId === toolCallId && val.stream !== 'command_output') {
+          val.commandOutput = commandOutput
+          cursor.update(val)
+          if (!resolved) { resolved = true; resolve(true) }
+          return
+        }
+        cursor.continue()
+      }
+      req.onerror = () => reject(req.error)
+    }).catch(() => false)
+
+    // 找不到对应工具事件时，创建一条快照记录
+    if (!updated) {
+      store.put({
+        sessionKey,
+        runId: '',
+        toolCallId,
+        stream: 'command_output',
+        phase: '',
+        data: { output: commandOutput },
+        timestamp: Date.now(),
+        commandOutput
+      })
+    }
+  } catch (e) {
+    console.error('[db] updateToolEventOutput error:', e)
+  }
+}
+
+/** 删除某个 toolCallId 的 command_output 碎片（快照后清理） */
+export async function deleteCommandOutputChunks(sessionKey, toolCallId) {
+  if (!sessionKey || !toolCallId) return
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_TOOL_EVENTS, 'readwrite')
+    const store = tx.objectStore(STORE_TOOL_EVENTS)
+    const index = store.index('toolCallId')
+    const range = IDBKeyRange.bound(toolCallId, toolCallId)
+    const request = index.openCursor(range)
+    request.onsuccess = (event) => {
+      const cursor = event.target.result
+      if (cursor) {
+        const val = cursor.value
+        if (val.sessionKey === sessionKey && val.stream === 'command_output') {
+          cursor.delete()
+        }
+        cursor.continue()
+      }
+    }
+  } catch (e) {
+    console.error('[db] deleteCommandOutputChunks error:', e)
   }
 }
 
