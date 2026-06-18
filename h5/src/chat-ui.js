@@ -1,5 +1,5 @@
 import { wsClient, uuid } from './api-client.js'
-import { renderMarkdown } from './markdown.js'
+import { renderMarkdown, copyCode } from './markdown.js'
 import { initMedia, pickImage, pickMedia, getAttachments, clearAttachments, hasAttachments, showLightbox } from './media.js'
 import { initCommands, showCommands } from './commands.js'
 import { t, formatRelativeTime } from './i18n.js'
@@ -258,7 +258,13 @@ async function restorePendingIndicator() {
 export function initChatUI(onSettings) {
   _messagesEl = document.getElementById('chat-messages')
   _typingEl = document.getElementById('typing-indicator')
-  
+
+  // 代码块复制按钮事件委托（DOMPurify 会剥离内联 onclick）
+  _messagesEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.code-copy-btn')
+    if (btn) copyCode(btn)
+  })
+
   // 滚动到底部按钮
   const scrollBtn = document.getElementById('scroll-bottom-btn')
   scrollBtn.onclick = () => scrollToBottom()

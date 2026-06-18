@@ -133,6 +133,31 @@
   background: rgba(0,0,0,0.02);
 }
 
+/* Task lists (markdown-it-task-lists) */
+.msg-bubble .task-list-item {
+  list-style: none;
+}
+
+.msg-bubble .task-list-item input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Blockquotes */
+.msg-bubble blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+}
+
+/* Strikethrough */
+.msg-bubble del,
+.msg-bubble s {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 .cmd-overlay {
   position: fixed;
   inset: 0;

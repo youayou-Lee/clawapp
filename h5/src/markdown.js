@@ -1,3 +1,7 @@
+import markdownit from 'markdown-it'
+import markdownItTaskLists from 'markdown-it-task-lists'
+import DOMPurify from 'dompurify'
+
 const KEYWORDS = new Set([
   'const','let','var','function','return','if','else','for','while','do',
   'switch','case','break','continue','new','this','class','extends','import',
@@ -10,23 +14,6 @@ const KEYWORDS = new Set([
   'package','main','fmt','go','chan','defer','select','type','interface','map','range',
 ])
 
-function highlightCode(code, lang) {
-  const escaped = escapeHtml(code)
-
-  return escaped
-    .replace(/\b(\d+\.?\d*)\b/g, '<span class="hl-number">$1</span>')
-    .replace(/(\/\/.*$|#.*$)/gm, '<span class="hl-comment">$1</span>')
-    .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="hl-comment">$1</span>')
-    .replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;|&#x27;(?:[^&]|&(?!#x27;))*?&#x27;|`[^`]*`)/g,
-      '<span class="hl-string">$1</span>')
-    .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, (m, w) =>
-      KEYWORDS.has(w) ? m : `<span class="hl-type">${w}</span>`)
-    .replace(/\b(\w+)(?=\s*\()/g, (m, w) =>
-      KEYWORDS.has(w) ? m : `<span class="hl-func">${w}</span>`)
-    .replace(/\b(\w+)\b/g, (m, w) =>
-      KEYWORDS.has(w) ? `<span class="hl-keyword">${w}</span>` : m)
-}
-
 function escapeHtml(str) {
   return str
     .replace(/&/g, '&amp;')
@@ -36,181 +23,131 @@ function escapeHtml(str) {
     .replace(/'/g, '&#x27;')
 }
 
+function highlightCode(code, lang) {
+  let escaped = escapeHtml(code)
+
+  // 第一遍：注释、字符串、数字（会生成 span）
+  escaped = escaped
+    .replace(/(\/\/.*$|#.*$)/gm, '<span class="hl-comment">$1</span>')
+    .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="hl-comment">$1</span>')
+    .replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;|&#x27;(?:[^&]|&(?!#x27;))*?&#x27;|`[^`]*`)/g, '<span class="hl-string">$1</span>')
+    .replace(/\b(\d+\.?\d*)\b/g, '<span class="hl-number">$1</span>')
+
+  // 第二遍：把已生成的 HTML 标签和文本拆开，避免 keyword/type/func 正则匹配到 class="..." 等属性
+  return escaped.split(/(<[^\u003e]+>)/).map(part => {
+    if (part.startsWith('<') && part.endsWith('>')) return part
+    // 先处理 keyword，再处理 func/type，避免后生成的 <span class="..."> 中的 class 被 keyword 命中
+    return part
+      .replace(/\b(\w+)\b/g, (m, w) =>
+        KEYWORDS.has(w) ? `<span class="hl-keyword">${w}</span>` : m)
+      .replace(/\b(\w+)(?=\s*\()/g, (m, w) =>
+        KEYWORDS.has(w) ? m : `<span class="hl-func">${w}</span>`)
+      .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, (m, w) =>
+        KEYWORDS.has(w) ? m : `<span class="hl-type">${w}</span>`)
+  }).join('')
+}
+
+const md = markdownit({
+  html: true,
+  breaks: true,
+  linkify: true,
+  highlight(code, lang) {
+    const highlighted = lang ? highlightCode(code, lang) : escapeHtml(code)
+    const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : ''
+    return `<pre data-lang="${escapeHtml(lang)}">${langLabel}<button class="code-copy-btn" type="button">Copy</button><code class="${lang ? `language-${escapeHtml(lang)}` : ''}">${highlighted}</code></pre>`
+  }
+})
+
+md.enable('strikethrough')
+md.linkify.set({ fuzzyLink: false })
+md.validateLink = () => true
+md.use(markdownItTaskLists, { enabled: false, label: false })
+
+const ALLOWED_TAGS = [
+  'a','b','blockquote','br','button','code','del','details','div','em','h1','h2','h3','h4','h5','h6',
+  'hr','i','img','input','li','ol','p','pre','s','span','strong','summary','sup','table','tbody','td',
+  'th','thead','tr','ul','video'
+]
+
+const ALLOWED_ATTR = [
+  'alt','aria-label','checked','class','controls','data-lang','data-src','disabled','href','playsinline',
+  'preload','rel','src','start','target','title','type'
+]
+
+const MEDIA_RE = /MEDIA:(\/[^\n<"]+)/g
+
+// 移除表格行之间的空行，让 markdown-it 能正确解析模型常输出的“带空行表格”
+function normalizeTables(text) {
+  const lines = text.split('\n')
+  const result = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line.trim() === '' && i > 0 && i < lines.length - 1) {
+      const prevHasPipe = lines[i - 1].includes('|')
+      let nextHasPipe = false
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() === '') continue
+        nextHasPipe = lines[j].includes('|')
+        break
+      }
+      if (prevHasPipe && nextHasPipe) continue
+    }
+    result.push(line)
+  }
+  return result.join('\n')
+}
+
+function renderMediaWidget(path) {
+  const src = `/media?path=${encodeURIComponent(path)}`
+  const fileName = escapeHtml(path.split('/').pop().split('?')[0] || '文件')
+  const ext = fileName.split('.').pop().toLowerCase()
+
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|opus|wma)$/i.test(path)) {
+    return `<div class="voice-bubble" data-src="${src}"><span class="voice-icon">&#9654;</span><span class="voice-bar"></span><span class="voice-dur">0″</span></div>`
+  }
+  if (/\.(mp4|mov|webm|mkv|avi|flv)$/i.test(path)) {
+    return `<div class="msg-video-wrap"><video controls preload="metadata" playsinline src="${src}" class="msg-video"></video></div>`
+  }
+  if (/\.(jpe?g|png|gif|webp|heic|svg)$/i.test(path)) {
+    return `<img src="${src}" alt="${fileName}" class="msg-img" />`
+  }
+
+  const iconMap = { pdf: '📄', doc: '📝', docx: '📝', txt: '📃', md: '📃', json: '📋', csv: '📊', zip: '📦', rar: '📦' }
+  const icon = iconMap[ext] || '📎'
+  const dlSrc = `${src}&download=1`
+  return `<div class="msg-file-card" onclick="window.open('${dlSrc}','_blank')"><span class="msg-file-icon">${icon}</span><div class="msg-file-info"><span class="msg-file-name">${fileName}</span></div></div>`
+}
+
+function postprocessMedia(html) {
+  return html.replace(MEDIA_RE, (match, rawPath) => renderMediaWidget(rawPath.trim()))
+}
+
+function postprocessClasses(html) {
+  html = html.replace(/<table>/g, '<table class="md-table">')
+  html = html.replace(/<img /g, '<img class="msg-img" ')
+  return html
+}
+
 export function renderMarkdown(text) {
   if (!text) return ''
 
-  let html = text
+  let html = md.render(normalizeTables(text))
+  html = postprocessClasses(html)
+  html = postprocessMedia(html)
 
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const highlighted = highlightCode(code.trimEnd(), lang)
-    const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : ''
-    return `<pre data-lang="${escapeHtml(lang)}">${langLabel}<button class="code-copy-btn" onclick="window.__copyCode(this)">Copy</button><code>${highlighted}</code></pre>`
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ADD_DATA_URI_TAGS: ['img'],
+    ALLOW_DATA_ATTR: false
   })
-
-  html = html.replace(/`([^`\n]+)`/g, (_, code) =>
-    `<code>${escapeHtml(code)}</code>`)
-
-  const lines = html.split('\n')
-  const result = []
-  let inList = false
-  let listType = ''
-  let inTable = false
-
-  function closeList() {
-    if (inList) {
-      result.push(`</${listType}>`)
-      inList = false
-      listType = ''
-    }
-  }
-
-  function isTableDelimiter(line) {
-    return /^\|?\s*:?-+:?(?:\s*\|\s*:?-+:?)\s*\|?\s*$/.test(line)
-  }
-
-  function parseTableRow(line) {
-    const parts = line.split('|')
-    return parts.map(s => s.trim()).filter((s, idx, arr) => {
-      // 忽略首尾的空白单元格（由行首/行尾的 | 产生）
-      if ((idx === 0 || idx === arr.length - 1) && s === '') return false
-      return true
-    })
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i]
-
-    if (line.startsWith('<pre')) {
-      closeList()
-      result.push(line)
-      while (i < lines.length - 1 && !lines[i].includes('</pre>')) {
-        i++
-        result.push(lines[i])
-      }
-      continue
-    }
-
-    // Horizontal rule
-    if (/^(---+|\*\*\*+|___+)\s*$/.test(line)) {
-      closeList()
-      result.push('<hr>')
-      continue
-    }
-
-    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/)
-    if (headingMatch) {
-      closeList()
-      const level = headingMatch[1].length
-      result.push(`<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`)
-      continue
-    }
-
-    const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/)
-    if (ulMatch) {
-      closeList()
-      if (!inList || listType !== 'ul') {
-        result.push('<ul>')
-        inList = true
-        listType = 'ul'
-      }
-      result.push(`<li>${inlineFormat(ulMatch[1])}</li>`)
-      continue
-    }
-
-    const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/)
-    if (olMatch) {
-      closeList()
-      if (!inList || listType !== 'ol') {
-        result.push('<ol>')
-        inList = true
-        listType = 'ol'
-      }
-      result.push(`<li>${inlineFormat(olMatch[1])}</li>`)
-      continue
-    }
-
-    if (inList) {
-      result.push(`</${listType}>`)
-      inList = false
-      listType = ''
-    }
-
-    // Tables: | col1 | col2 |
-    if (line.includes('|')) {
-      const nextLine = lines[i + 1] || ''
-      if (isTableDelimiter(nextLine)) {
-        closeList()
-        inTable = true
-        const headerCells = parseTableRow(line)
-        result.push('<table class="md-table"><thead><tr>' + headerCells.map(c => `<th>${inlineFormat(c)}</th>`).join('') + '</tr></thead><tbody>')
-        i++ // skip delimiter
-        continue
-      }
-      if (inTable) {
-        const cells = parseTableRow(line)
-        result.push('<tr>' + cells.map(c => `<td>${inlineFormat(c)}</td>`).join('') + '</tr>')
-        continue
-      }
-    }
-
-    if (inTable) {
-      result.push('</tbody></table>')
-      inTable = false
-    }
-
-    if (line.trim() === '') {
-      result.push('')
-      continue
-    }
-
-    if (!line.startsWith('<')) {
-      result.push(`<p>${inlineFormat(line)}</p>`)
-    } else {
-      result.push(line)
-    }
-  }
-
-  if (inList) result.push(`</${listType}>`)
-  if (inTable) result.push('</tbody></table>')
-
-  let output = result.join('\n')
-  // MEDIA: 路径替换为音频/视频/文件播放器
-  output = output.replace(/MEDIA:(\/[^\n<"]+)/g, (_, rawPath) => {
-    const path = rawPath.trim()
-    const src = `/media?path=${encodeURIComponent(path)}`
-    if (/\.(mp3|wav|ogg|m4a|aac|flac|opus|wma)$/i.test(path)) {
-      return `<div class="voice-bubble" data-src="${src}"><span class="voice-icon">&#9654;</span><span class="voice-bar"></span><span class="voice-dur">0″</span></div>`
-    }
-    if (/\.(mp4|mov|webm|mkv|avi|flv)$/i.test(path)) return `<div class="msg-video-wrap"><video controls preload="metadata" playsinline src="${src}" class="msg-video"></video></div>`
-    if (/\.(jpe?g|png|gif|webp|heic|svg)$/i.test(path)) return `<img src="${src}" alt="${escapeHtml(path.split('/').pop())}" class="msg-img" />`
-    const fileName = escapeHtml(path.split('/').pop())
-    const ext = path.split('.').pop().toLowerCase()
-    const iconMap = { pdf: '📄', doc: '📝', docx: '📝', txt: '📃', md: '📃', json: '📋', csv: '📊', zip: '📦', rar: '📦' }
-    const icon = iconMap[ext] || '📎'
-    const dlSrc = `${src}&download=1`
-    return `<div class="msg-file-card" onclick="window.open('${dlSrc}','_blank')"><span class="msg-file-icon">${icon}</span><div class="msg-file-info"><span class="msg-file-name">${fileName}</span></div></div>`
-  })
-  return output
 }
 
-function inlineFormat(text) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="msg-img" />')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-      const safe = /^https?:|^mailto:/i.test(url.trim()) ? url : '#'
-      return `<a href="${safe}" target="_blank" rel="noopener">${label}</a>`
-    })
-}
-
-window.__copyCode = function(btn) {
+export function copyCode(btn) {
   const pre = btn.closest('pre')
-  const code = pre.querySelector('code')
-  const text = code.innerText
-  navigator.clipboard.writeText(text).then(() => {
+  const code = pre?.querySelector('code')
+  if (!code) return
+  navigator.clipboard.writeText(code.innerText).then(() => {
     btn.textContent = '✓'
     setTimeout(() => { btn.textContent = 'Copy' }, 1500)
   }).catch(() => {
