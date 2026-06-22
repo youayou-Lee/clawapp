@@ -17,6 +17,10 @@ android/app/release.keystore
 .idea/
 *.iml
 
+# OpenClaw / tooling local config
+.omc/
+.playwright-mcp/
+
 # Electron build outputs
 electron/release/
 electron/node_modules/
