@@ -230,41 +230,37 @@ function setSessionProgress(session, patch = {}) {
   };
 }
 
-/**
- * 生成 connect 握手帧（含 Ed25519 device 签名）
- */
 function createConnectFrame(nonce) {
-  const signedAt = Date.now();
-  const credential = CONFIG.gatewayPassword || CONFIG.gatewayToken;
-  // v3 签名: 在 v2 基础上追加 platform + deviceFamily（与 OpenClaw 2026.5.x 对齐）
-  const platform = 'web';
-  const deviceFamily = 'clawapp';
-  // nonce 必须非空（NonEmptyString），且签名与 device.nonce 必须一致
-  const effectiveNonce = nonce || randomUUID();
-  const payload = ['v3', deviceKey.deviceId, 'gateway-client', 'backend', 'operator', SCOPES.join(','), String(signedAt), credential, effectiveNonce, platform, deviceFamily].join('|');
-  const signature = ed25519Sign(null, Buffer.from(payload, 'utf8'), devicePrivateKey).toString('base64url');
   const auth = CONFIG.gatewayPassword
     ? { password: CONFIG.gatewayPassword }
     : { token: CONFIG.gatewayToken };
-  // 注入持久化的 deviceToken（如果有）
   const stored = loadDeviceToken();
   if (stored?.token) auth.deviceToken = stored.token;
-  return {
+  const frame = {
     type: 'req',
     id: `connect-${randomUUID()}`,
     method: 'connect',
     params: {
       minProtocol: 4, maxProtocol: 4,
-      client: { id: 'gateway-client', displayName: 'ClawApp', version: '2.0.0', platform, deviceFamily, mode: 'backend' },
+      client: { id: 'gateway-client', displayName: 'ClawApp', version: '2.0.0', platform: 'web', deviceFamily: 'clawapp', mode: 'backend' },
       role: 'operator',
       scopes: SCOPES,
       caps: [],
       auth,
-      device: { id: deviceKey.deviceId, publicKey: deviceKey.publicKey, signedAt, nonce: effectiveNonce, signature },
       locale: 'zh-CN',
       userAgent: 'ClawApp/2.0.0',
     },
   };
+  // 始终附加 Ed25519 device 签名（用于 scope 协商，即使配了 token 也提交设备身份）
+  {
+    const signedAt = Date.now();
+    const credential = CONFIG.gatewayPassword || CONFIG.gatewayToken || '';
+    const effectiveNonce = nonce || randomUUID();
+    const payload = ['v3', deviceKey.deviceId, 'gateway-client', 'backend', 'operator', SCOPES.join(','), String(signedAt), credential, effectiveNonce, 'web', 'clawapp'].join('|');
+    const signature = ed25519Sign(null, Buffer.from(payload, 'utf8'), devicePrivateKey).toString('base64url');
+    frame.params.device = { id: deviceKey.deviceId, publicKey: deviceKey.publicKey, signedAt, nonce: effectiveNonce, signature };
+  }
+  return frame;
 }
 
 /**
