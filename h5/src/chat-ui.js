@@ -51,6 +51,7 @@ const SVG_SETTINGS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none
 const SVG_STOP = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`
 const SVG_MIC = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`
 const SVG_RELOAD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
+const SVG_CLEAR = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
 
 let _recognition = null
 let _isRecording = false
@@ -165,7 +166,8 @@ export function createChatPage() {
   page.innerHTML = `
     <div class="chat-header">
       <div class="status-dot" id="status-dot"></div>
-      <div class="title" id="session-title">ClawApp</div>
+      <button class="title" id="session-title">${t('session.title')}</button>
+      <button class="clear-btn" id="clear-btn" title="${t('chat.clear')}">${SVG_CLEAR}</button>
       <button class="settings-btn" id="reload-btn" title="${t('settings.reload')}">${SVG_RELOAD}</button>
       <button class="settings-btn" id="settings-btn">${SVG_SETTINGS}</button>
     </div>
@@ -286,6 +288,7 @@ export function initChatUI(onSettings) {
   }
 
   document.getElementById('reload-btn').onclick = () => location.reload()
+  document.getElementById('clear-btn').onclick = () => handleClearChat()
   document.getElementById('settings-btn').onclick = () => showSettings()
   document.getElementById('session-title').onclick = () => showSessionPicker()
   initSessionPicker({
@@ -409,6 +412,13 @@ function fallbackToDefaultSessionWithNotice() {
   switchSession(fallback)
 }
 
+async function handleClearChat() {
+  clearMessages()
+  await clearSessionMessages(_sessionKey)
+  await clearToolEvents(_sessionKey)
+  appendSystemMessage(t('chat.cleared'))
+}
+
 function handleSendClick() {
   if (_isStreaming) {
     wsClient.chatAbort(_sessionKey, _currentRunId).catch(() => {})
@@ -433,7 +443,7 @@ async function sendMessage() {
     clearMessages()
     await clearSessionMessages(_sessionKey)
     await clearToolEvents(_sessionKey)
-    appendSystemMessage('对话已清空')
+    appendSystemMessage(t('chat.cleared'))
   }
 
   // 如果正在发送或流式响应中，加入队列
@@ -1793,12 +1803,7 @@ export function abortChat() {
 function updateSessionTitle() {
   const titleEl = document.getElementById('session-title')
   if (!titleEl) return
-  // role-gong agent：标题栏显示当前时间
-  const now = new Date()
-  const h = now.getHours().toString().padStart(2, '0')
-  const m = now.getMinutes().toString().padStart(2, '0')
-  const s = now.getSeconds().toString().padStart(2, '0')
-  titleEl.textContent = `${h}:${m}:${s}`
+  titleEl.textContent = t('session.title')
   titleEl.title = _sessionKey
 }
 

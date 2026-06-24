@@ -136,6 +136,15 @@ export async function refreshSessionList() {
   }
 }
 
+function autoName() {
+  const now = new Date()
+  const mm = (now.getMonth() + 1).toString().padStart(2, '0')
+  const dd = now.getDate().toString().padStart(2, '0')
+  const h = now.getHours().toString().padStart(2, '0')
+  const m = now.getMinutes().toString().padStart(2, '0')
+  return `${mm}-${dd} ${h}:${m}`
+}
+
 /** 新建会话弹窗 */
 function promptNewSession() {
   closeSessionPicker()
@@ -150,7 +159,7 @@ function promptNewSession() {
     <h3>${t('session.new')}</h3>
     <div class="form-group" style="margin:16px 0">
       <label style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;display:block">${t('session.new.name')}</label>
-      <input type="text" id="new-session-name" placeholder="${t('session.new.name.placeholder')}"
+      <input type="text" id="new-session-name" placeholder="${autoName()}"
         style="width:100%;height:40px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:0 12px;color:var(--text-primary);font-size:14px;outline:none" />
     </div>
     <div style="margin:0 0 16px">
@@ -176,8 +185,8 @@ function promptNewSession() {
   overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); dialog.remove() } }
   dialog.querySelector('.cancel').onclick = () => { overlay.remove(); dialog.remove() }
   dialog.querySelector('.confirm').onclick = () => {
-    const name = dialog.querySelector('#new-session-name').value.trim()
-    if (!name) return
+    let name = dialog.querySelector('#new-session-name').value.trim()
+    if (!name) name = autoName()
     const agent = dialog.querySelector('#new-session-agent')?.value.trim() || defaultAgent
     const newKey = `agent:${agent}:${name}`
     overlay.remove()
