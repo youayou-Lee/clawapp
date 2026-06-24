@@ -176,8 +176,8 @@ function promptNewSession() {
   overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); dialog.remove() } }
   dialog.querySelector('.cancel').onclick = () => { overlay.remove(); dialog.remove() }
   dialog.querySelector('.confirm').onclick = () => {
-    // 用户未填写时自动使用时间戳名称
-    const name = dialog.querySelector('#new-session-name').value.trim() || autoName()
+    const name = dialog.querySelector('#new-session-name').value.trim()
+    if (!name) return
     const agent = dialog.querySelector('#new-session-agent')?.value.trim() || defaultAgent
     const newKey = `agent:${agent}:${name}`
     overlay.remove()
@@ -186,16 +186,10 @@ function promptNewSession() {
     _onSystemMsg?.(t('session.created', { name }))
   }
 
-  // 自动生成时间戳作为默认名称的 placeholder（虚化提示）
-  const nameInput = dialog.querySelector('#new-session-name')
-  nameInput.placeholder = autoName()
-  nameInput.style.color = 'var(--text-primary)'
-  nameInput._placeholderStyle = true
-
   document.body.appendChild(overlay)
   document.body.appendChild(dialog)
-  nameInput.focus()
-  nameInput.onkeydown = (e) => {
+  dialog.querySelector('#new-session-name').focus()
+  dialog.querySelector('#new-session-name').onkeydown = (e) => {
     if (e.key === 'Enter') dialog.querySelector('.confirm').click()
   }
 }
@@ -238,16 +232,6 @@ function confirmDeleteSession(key, name) {
 
   document.body.appendChild(overlay)
   document.body.appendChild(dialog)
-}
-
-/** 自动生成时间戳名称 */
-function autoName() {
-  const now = new Date()
-  const m = (now.getMonth() + 1).toString().padStart(2, '0')
-  const d = now.getDate().toString().padStart(2, '0')
-  const h = now.getHours().toString().padStart(2, '0')
-  const min = now.getMinutes().toString().padStart(2, '0')
-  return `${m}-${d} ${h}:${min}`
 }
 
 export function closeSessionPicker() {
