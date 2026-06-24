@@ -187,8 +187,9 @@ function initApp() {
   }
   }
 
-  // 首次运行检测
-  if (!config?.token) {
+  // 首次运行检测（仅在非自动连接时检测）
+  const autoConnecting = !!(config?.host || !config?.token)
+  if (!autoConnecting) {
     fetch('/api/setup-hint').then(r => r.json()).then(data => {
       if (data.ok && data.firstRun) {
         showFirstRunSetup(hostInput, errorEl)
@@ -240,11 +241,16 @@ function initApp() {
     showGuideIfNeeded()
   })
 
-  // 自动连接（token 可以为空）
+  // 自动连接（有保存配置时，或首次加载时使用当前 origin）
   if (config?.host) {
     connectBtn.disabled = true
     connectBtn.textContent = t('setup.connecting')
     doConnect(config.host, config.token || '', errorEl, connectBtn)
+  } else {
+    // 首次加载无配置，使用当前 origin + 空 token 自动连接
+    connectBtn.disabled = true
+    connectBtn.textContent = t('setup.connecting')
+    doConnect(window.location.origin, '', errorEl, connectBtn)
   }
 
   // 语言切换时重建连接页

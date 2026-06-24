@@ -29,11 +29,11 @@ if (!existsSync(ENV_PATH)) {
     '# ClawApp 配置文件（自动生成）',
     'PROXY_PORT=3210',
     '',
-    '# H5 客户端连接密码（登录时填写的 Token）',
-    `PROXY_TOKEN=${tmpToken}`,
+    '# H5 客户端连接密码（登录时填写的 Token，留空表示无需认证）',
+    'PROXY_TOKEN=',
     '',
-    '# 首次运行标记（用户设置密码后自动移除）',
-    'SETUP_PENDING=true',
+    '# 是否跳过 H5 登录（默认 true，设为 false 则强制要求 Token）',
+    'BYPASS_H5_LOGIN=true',
     '',
     '# OpenClaw Gateway 地址',
     'OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789',
@@ -124,7 +124,7 @@ function buildContentDisposition(filename) {
 const CONFIG = {
   port: parseInt(process.env.PROXY_PORT, 10) || 3210,
   proxyToken: process.env.PROXY_TOKEN || '',
-  bypassLogin: process.env.BYPASS_H5_LOGIN === 'true',
+  bypassLogin: process.env.BYPASS_H5_LOGIN !== 'false',
   gatewayUrl: process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789',
   gatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN || '',
   gatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD || '',
@@ -1304,8 +1304,8 @@ server.listen(CONFIG.port, () => {
   } else {
     log.info(`媒体文件允许目录: ${CONFIG.mediaAllowedDirs.join(', ')}`);
   }
-  if (_isFirstRun) {
-    log.info('首次运行，请在浏览器中打开上述地址设置连接密码');
+  if (CONFIG.bypassLogin) {
+    log.info('H5 登录已跳过（BYPASS_H5_LOGIN=true），无需 Token 即可连接');
   } else if (CONFIG.proxyToken) {
     log.info('连接密码已配置');
   } else {
