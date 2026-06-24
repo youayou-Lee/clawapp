@@ -374,9 +374,40 @@ html, body {
 
 .chat-header .title {
   flex: 1;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.2px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-header .title:hover {
+  opacity: 0.8;
+}
+
+.chat-header .clear-btn {
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.chat-header .clear-btn:active {
+  background: rgba(0, 147, 150, 0.08);
 }
 
 .chat-header .settings-btn {
